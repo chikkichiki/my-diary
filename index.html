@@ -288,6 +288,8 @@ textarea.dta::placeholder{color:var(--text3);}
 </div>
 
 <script>
+const SUPABASE_URL = "https://yxvxhabxpndihpsdqgpl.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4dnhoYWJ4cG5kaWhwc2RxZ3BsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3MDA4MTksImV4cCI6MjA5MDI3NjgxOX0.xnqmsDc24jbo9wZK3V312yDOdL-MJLPn_PGS72Ggrwg";
 const SK = "diary_app_v1";
 let entries = [], calYear, calMonth, selDate = null;
 const today = new Date();
@@ -306,8 +308,38 @@ function showToast(m){
   setTimeout(()=>t.classList.remove("show"), 2000);
 }
 function getEntry(iso){ return entries.find(e=>e.date===iso); }
-function load(){ try{ const r=localStorage.getItem(SK); entries=r?JSON.parse(r):[]; }catch(e){ entries=[]; } }
-function save(){ localStorage.setItem(SK, JSON.stringify(entries)); }
+async function load(){
+  try{ const r=localStorage.getItem(SK); entries=r?JSON.parse(r):[]; }catch(e){ entries=[]; }
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/entries?select=date,data&order=date.desc`, {
+      headers:{ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+    });
+    if(res.ok){
+      const rows = await res.json();
+      if(rows.length > 0){
+        entries = rows.map(r=>JSON.parse(r.data));
+        localStorage.setItem(SK, JSON.stringify(entries));
+      }
+    }
+  }catch(e){ console.log("Load error:",e); }
+}
+async function save(){
+  localStorage.setItem(SK, JSON.stringify(entries));
+  try{
+    await fetch(`${SUPABASE_URL}/rest/v1/entries?date=neq.null`, {
+      method: "DELETE",
+      headers:{ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+    });
+    if(entries.length > 0){
+      const rows = entries.map(e=>({ date: e.date, data: JSON.stringify(e) }));
+      await fetch(`${SUPABASE_URL}/rest/v1/entries`, {
+        method: "POST",
+        headers:{ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+        body: JSON.stringify(rows)
+      });
+    }
+  }catch(e){ console.log("Save error:",e); }
+}
 
 const hints = ["今日はどんな一日でしたか？","今日、心が動いた瞬間は？","今日の自分に一言かけるとしたら？","小さくても嬉しかったことは？","今日、誰かのことを考えましたか？"];
 
@@ -513,7 +545,7 @@ function showScreen(id){
 }
 document.querySelectorAll(".nav-btn").forEach(btn=>btn.addEventListener("click",()=>showScreen(btn.dataset.s)));
 
-load(); initWrite(dk(today)); renderCalendar();
+load().then(()=>{ initWrite(dk(today)); renderCalendar(); });
 </script>
 </body>
 </html>
