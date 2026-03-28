@@ -161,7 +161,9 @@ textarea.dta::placeholder{color:var(--text3);}
   <!-- Write -->
   <div class="screen active" id="s-write">
     <div class="s-header">
-      <span class="s-date" id="w-date"></span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="date" id="w-date-input" style="font-size:13px;color:var(--text2);border:none;background:none;font-family:inherit;outline:none;cursor:pointer;padding:0;">
+      </div>
       <span class="saved-lbl" id="w-saved-lbl"></span>
     </div>
     <div class="write-body">
@@ -309,13 +311,23 @@ function save(){ localStorage.setItem(SK, JSON.stringify(entries)); }
 
 const hints = ["今日はどんな一日でしたか？","今日、心が動いた瞬間は？","今日の自分に一言かけるとしたら？","小さくても嬉しかったことは？","今日、誰かのことを考えましたか？"];
 
-function initWrite(){
-  const tk = dk(today);
-  document.getElementById("w-date").textContent = today.toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"short"});
+function getWriteDate(){ return document.getElementById("w-date-input").value || dk(today); }
+
+function initWrite(targetDate){
+  const tk = targetDate || dk(today);
+  const inp = document.getElementById("w-date-input");
+  inp.value = tk;
   document.getElementById("w-hint").textContent = hints[Math.floor(Math.random()*hints.length)];
   const ex = getEntry(tk);
-  if(ex){ document.getElementById("w-ta").value=ex.text||""; document.getElementById("w-chars").textContent=(ex.text||"").length; document.getElementById("w-saved-lbl").textContent="保存済み"; document.getElementById("btn-save").disabled=false; }
+  document.getElementById("w-ta").value = ex ? (ex.text||"") : "";
+  document.getElementById("w-chars").textContent = ex ? (ex.text||"").length : 0;
+  document.getElementById("w-saved-lbl").textContent = ex&&ex.text ? "保存済み" : "";
+  document.getElementById("btn-save").disabled = !ex || (ex.text||"").length < 5;
 }
+
+document.getElementById("w-date-input").addEventListener("change", function(){
+  initWrite(this.value);
+});
 
 document.getElementById("w-ta").addEventListener("input", function(){
   const l = this.value.length;
@@ -326,9 +338,11 @@ document.getElementById("w-ta").addEventListener("input", function(){
 
 document.getElementById("btn-save").addEventListener("click", function(){
   const text = document.getElementById("w-ta").value.trim(); if(!text) return;
-  const tk = dk(today); const idx = entries.findIndex(e=>e.date===tk);
+  const tk = getWriteDate();
+  const idx = entries.findIndex(e=>e.date===tk);
   if(idx>=0){ entries[idx].text=text; }
   else{ entries.unshift({date:tk,text,mood:null,moodScore:null,tags:[],title:null,health:null}); }
+  entries.sort((a,b)=>b.date.localeCompare(a.date));
   save(); document.getElementById("w-saved-lbl").textContent="保存済み"; showToast("保存しました");
   this.disabled=true; setTimeout(()=>this.disabled=false,1000);
 });
@@ -420,20 +434,17 @@ function renderCalendar(){
 
 function showCalPreview(iso){
   const pv=document.getElementById("cal-preview"); const entry=getEntry(iso);
-  if(!entry){pv.innerHTML="";return;}
-  const h=entry.health;
+  const h=entry&&entry.health;
   const hBits=[];
   if(h){if(h.score)hBits.push(`体調 ${h.score}/5`);if(h.sleep)hBits.push(`睡眠 ${h.sleep}h`);if(h.foods&&h.foods.length)h.foods.slice(0,3).forEach(f=>hBits.push(f));if(h.symptoms&&h.symptoms.length&&!h.symptoms.includes("なし"))h.symptoms.forEach(s=>hBits.push(s));}
-  pv.innerHTML=`<div class="ep"><div class="ep-date">${fmtD(iso)}</div>${entry.title?`<div class="ep-title">${entry.title}</div>`:""}<div class="ep-body">${entry.text||"（日記なし）"}</div>${hBits.length?`<div class="ep-health">${hBits.map(b=>`<span class="ep-htag">${b}</span>`).join("")}</div>`:""}<div class="ep-actions"><button class="ep-btn primary" onclick="editEntry('${iso}')">編集</button></div></div>`;
+  const bodyText = entry ? (entry.text||"（日記なし）") : "（まだ記録がありません）";
+  const title = entry&&entry.title ? `<div class="ep-title">${entry.title}</div>` : "";
+  pv.innerHTML=`<div class="ep"><div class="ep-date">${fmtD(iso)}</div>${title}<div class="ep-body">${bodyText}</div>${hBits.length?`<div class="ep-health">${hBits.map(b=>`<span class="ep-htag">${b}</span>`).join("")}</div>`:""}<div class="ep-actions"><button class="ep-btn primary" onclick="editEntry('${iso}')">この日に書く</button></div></div>`;
 }
 
 window.editEntry=function(iso){
-  const e=getEntry(iso);if(!e)return;
-  document.getElementById("w-ta").value=e.text||"";
-  document.getElementById("w-chars").textContent=(e.text||"").length;
-  document.getElementById("w-saved-lbl").textContent="編集中";
-  document.getElementById("btn-save").disabled=(e.text||"").length<5;
   showScreen("write");
+  initWrite(iso);
 };
 
 document.getElementById("cal-prev").addEventListener("click",()=>{calMonth--;if(calMonth<0){calMonth=11;calYear--;}selDate=null;renderCalendar();document.getElementById("cal-preview").innerHTML="";});
@@ -502,7 +513,7 @@ function showScreen(id){
 }
 document.querySelectorAll(".nav-btn").forEach(btn=>btn.addEventListener("click",()=>showScreen(btn.dataset.s)));
 
-load(); initWrite(); renderCalendar();
+load(); initWrite(dk(today)); renderCalendar();
 </script>
 </body>
 </html>
