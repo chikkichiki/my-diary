@@ -156,6 +156,7 @@ textarea.dta::placeholder{color:var(--text3);}
     <button class="nav-btn" data-s="calendar">カレンダー</button>
     <button class="nav-btn" data-s="list">一覧</button>
     <button class="nav-btn" data-s="report">月次レポート</button>
+    <button class="nav-btn" data-s="period">生理</button>
   </div>
 
   <!-- Write -->
@@ -283,6 +284,65 @@ textarea.dta::placeholder{color:var(--text3);}
     </div>
     <div class="rep-body" id="rep-body">
       <div class="rep-placeholder"><p>年月を選んで「生成」をクリックすると<br>レポートが表示されます。</p></div>
+    </div>
+  </div>
+
+  <!-- Period -->
+  <div class="screen" id="s-period">
+    <div class="s-header" style="padding-bottom:12px;">
+      <span style="font-size:15px;font-weight:600;color:var(--text);">生理管理</span>
+    </div>
+    <div style="height:0.5px;background:var(--border);margin:0 18px;"></div>
+    <div style="padding:14px 18px;display:flex;flex-direction:column;gap:16px;overflow-y:auto;">
+      <div style="background:var(--bg2);border-radius:var(--radius-lg);padding:14px;" id="period-next-box">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">次回予測開始日</div>
+        <div style="font-size:22px;font-weight:700;color:var(--text);" id="period-next-date">—</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;" id="period-next-sub"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+        <div style="background:var(--bg2);border-radius:var(--radius);padding:12px;">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">平均周期</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text);" id="period-avg-cycle">—</div>
+          <div style="font-size:11px;color:var(--text2);">日</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:var(--radius);padding:12px;">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">平均期間</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text);" id="period-avg-duration">—</div>
+          <div style="font-size:11px;color:var(--text2);">日</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">新しく記録する</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <label style="font-size:13px;color:var(--text2);">開始日</label>
+            <input type="date" id="p-start" style="font-size:13px;border:0.5px solid var(--border);border-radius:var(--radius);padding:6px 10px;background:var(--bg);color:var(--text);font-family:inherit;outline:none;">
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <label style="font-size:13px;color:var(--text2);">終了日</label>
+            <input type="date" id="p-end" style="font-size:13px;border:0.5px solid var(--border);border-radius:var(--radius);padding:6px 10px;background:var(--bg);color:var(--text);font-family:inherit;outline:none;">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="font-size:13px;color:var(--text2);">症状メモ</label>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;" id="p-symptom-btns">
+              <button class="cond-btn" data-v="腹痛">腹痛</button>
+              <button class="cond-btn" data-v="腰痛">腰痛</button>
+              <button class="cond-btn" data-v="頭痛">頭痛</button>
+              <button class="cond-btn" data-v="眠気">眠気</button>
+              <button class="cond-btn" data-v="イライラ">イライラ</button>
+              <button class="cond-btn" data-v="むくみ">むくみ</button>
+              <button class="cond-btn" data-v="胸の張り">胸の張り</button>
+              <button class="cond-btn" data-v="なし">なし</button>
+            </div>
+          </div>
+          <textarea class="dta" id="p-memo" placeholder="その他メモ..." style="min-height:60px;"></textarea>
+          <button class="btn-p" id="btn-period-save" style="width:100%;">保存する</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">記録履歴</div>
+        <div style="display:flex;flex-direction:column;gap:8px;" id="period-history"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -542,8 +602,84 @@ function showScreen(id){
   if(id==="list")renderList();
   if(id==="health")initHealth();
   if(id==="report")initRepSelectors();
+  if(id==="period")initPeriod();
 }
 document.querySelectorAll(".nav-btn").forEach(btn=>btn.addEventListener("click",()=>showScreen(btn.dataset.s)));
+
+
+// Period management
+const PSK = "period_records_v1";
+let periods = [], pSymptoms = [];
+
+function loadPeriods(){
+  try{ const r=localStorage.getItem(PSK); periods=r?JSON.parse(r):[]; }catch(e){ periods=[]; }
+}
+function savePeriods(){
+  localStorage.setItem(PSK, JSON.stringify(periods));
+}
+function daysBetween(a,b){
+  return Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
+}
+function initPeriod(){
+  loadPeriods();
+  document.getElementById("p-start").value = dk(today);
+  document.getElementById("p-end").value = "";
+  document.getElementById("p-memo").value = "";
+  pSymptoms = [];
+  document.querySelectorAll("#p-symptom-btns .cond-btn").forEach(b=>b.classList.remove("on"));
+  renderPeriodStats();
+  renderPeriodHistory();
+}
+document.querySelectorAll("#p-symptom-btns .cond-btn").forEach(b=>b.addEventListener("click",()=>{
+  const v=b.dataset.v;
+  if(v==="\u306a\u3057"){pSymptoms=pSymptoms.includes("\u306a\u3057")?[]:["\u306a\u3057"];}
+  else{const i=pSymptoms.indexOf(v);if(i>=0)pSymptoms.splice(i,1);else{pSymptoms=pSymptoms.filter(x=>x!=="\u306a\u3057");pSymptoms.push(v);}}
+  document.querySelectorAll("#p-symptom-btns .cond-btn").forEach(b2=>b2.classList.toggle("on",pSymptoms.includes(b2.dataset.v)));
+}));
+document.getElementById("btn-period-save").addEventListener("click",()=>{
+  const start=document.getElementById("p-start").value;
+  const end=document.getElementById("p-end").value;
+  const memo=document.getElementById("p-memo").value;
+  if(!start){showToast("\u958b\u59cb\u65e5\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044");return;}
+  periods.unshift({id:Date.now(),start,end,symptoms:[...pSymptoms],memo});
+  savePeriods();
+  showToast("\u4fdd\u5b58\u3057\u307e\u3057\u305f");
+  initPeriod();
+});
+function renderPeriodStats(){
+  const sorted=[...periods].sort((a,b)=>a.start.localeCompare(b.start));
+  let cycles=[],durations=[];
+  for(let i=1;i<sorted.length;i++) cycles.push(daysBetween(sorted[i-1].start,sorted[i].start));
+  sorted.forEach(p=>{if(p.end)durations.push(daysBetween(p.start,p.end)+1);});
+  const avgCycle=cycles.length>0?Math.round(cycles.reduce((a,b)=>a+b,0)/cycles.length):null;
+  const avgDur=durations.length>0?Math.round(durations.reduce((a,b)=>a+b,0)/durations.length):null;
+  document.getElementById("period-avg-cycle").textContent=avgCycle||"\u2014";
+  document.getElementById("period-avg-duration").textContent=avgDur||"\u2014";
+  if(sorted.length>0&&avgCycle){
+    const last=sorted[sorted.length-1];
+    const lastDate=new Date(last.start+"T00:00:00");
+    lastDate.setDate(lastDate.getDate()+avgCycle);
+    const nextIso=dk(lastDate);
+    const diffDays=daysBetween(dk(today),nextIso);
+    document.getElementById("period-next-date").textContent=fmtD(nextIso);
+    document.getElementById("period-next-sub").textContent=diffDays>0?"\u3042\u3068 "+diffDays+" \u65e5":diffDays===0?"\u4eca\u65e5\u304b\u3082":"\u4e88\u6e2c\u65e5\u3092\u904e\u304e\u3066\u3044\u307e\u3059";
+  } else {
+    document.getElementById("period-next-date").textContent="\u2014";
+    document.getElementById("period-next-sub").textContent="\u8a18\u9332\u3092\u5897\u3084\u3059\u3068\u4e88\u6e2c\u3067\u304d\u307e\u3059";
+  }
+}
+function renderPeriodHistory(){
+  const hist=document.getElementById("period-history");
+  if(periods.length===0){hist.innerHTML='<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px;">\u307e\u3060\u8a18\u9332\u304c\u3042\u308a\u307e\u305b\u3093</div>';return;}
+  hist.innerHTML=periods.map(p=>{
+    const dur=p.end?daysBetween(p.start,p.end)+1:null;
+    const sympHtml=p.symptoms&&p.symptoms.length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">'+p.symptoms.map(s=>'<span style="font-size:11px;padding:2px 7px;border-radius:20px;background:#FBEAF0;color:#72243E;border:0.5px solid #F4C0D1;">'+s+'</span>').join('')+'</div>':"";
+    const memoHtml=p.memo?'<div style="font-size:12px;color:var(--text2);margin-top:4px;">'+p.memo+'</div>':"";
+    const endHtml=p.end?'<div style="font-size:12px;color:var(--text2);">\u301c '+fmtD(p.end)+'</div>':"";
+    const durHtml=dur?'<span style="font-size:12px;color:var(--text2);">'+dur+'\u65e5\u9593</span>':"";
+    return '<div style="background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:12px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:13px;font-weight:600;color:var(--text);">'+fmtD(p.start)+'</span>'+durHtml+'</div>'+endHtml+sympHtml+memoHtml+'</div>';
+  }).join("");
+}
 
 load().then(()=>{ initWrite(dk(today)); renderCalendar(); });
 </script>
