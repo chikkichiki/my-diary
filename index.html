@@ -182,7 +182,7 @@ textarea.dta::placeholder{color:var(--text3);}
   <!-- Health -->
   <div class="screen" id="s-health">
     <div class="s-header" style="padding-bottom:12px;">
-      <span class="s-date" id="h-date"></span>
+      <input type="date" id="h-date-input" style="font-size:13px;color:var(--text2);border:none;background:none;font-family:inherit;outline:none;cursor:pointer;padding:0;">
       <span class="saved-lbl" id="h-saved-lbl"></span>
     </div>
     <div style="height:0.5px;background:var(--border);margin:0 18px;"></div>
@@ -439,12 +439,19 @@ document.getElementById("btn-save").addEventListener("click", function(){
   this.disabled=true; setTimeout(()=>this.disabled=false,1000);
 });
 
-function initHealth(){
-  document.getElementById("h-date").textContent = today.toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"short"});
-  const ex = getEntry(dk(today));
+function getHealthDate(){ return document.getElementById("h-date-input").value || dk(today); }
+
+function initHealth(targetDate){
+  const td = targetDate || dk(today);
+  document.getElementById("h-date-input").value = td;
+  const ex = getEntry(td);
   hs = ex&&ex.health ? {...ex.health,symptoms:[...(ex.health.symptoms||[])],foods:[...(ex.health.foods||[])],exercise:[...(ex.health.exercise||[])]} : {score:0,symptoms:[],sleep:7,foods:[],exercise:[],memo:""};
   renderHealthUI();
 }
+
+document.getElementById("h-date-input").addEventListener("change", function(){
+  initHealth(this.value);
+});
 
 function renderHealthUI(){
   document.querySelectorAll("#cond-stars .star").forEach(s=>s.classList.toggle("on",parseInt(s.dataset.v)<=hs.score));
@@ -486,9 +493,9 @@ document.getElementById("food-input").addEventListener("keydown",e=>{if(e.key===
 
 document.getElementById("btn-health-save").addEventListener("click",()=>{
   hs.memo=document.getElementById("h-memo").value;
-  const tk=dk(today); const idx=entries.findIndex(e=>e.date===tk);
+  const tk=getHealthDate(); const idx=entries.findIndex(e=>e.date===tk);
   if(idx>=0){ entries[idx].health={...hs,symptoms:[...hs.symptoms],foods:[...hs.foods],exercise:[...hs.exercise]}; }
-  else{ entries.unshift({date:tk,text:"",mood:null,moodScore:null,tags:[],title:null,health:{...hs,symptoms:[...hs.symptoms],foods:[...hs.foods],exercise:[...hs.exercise]}}); }
+  else{ entries.unshift({date:tk,text:"",mood:null,moodScore:null,tags:[],title:null,health:{...hs,symptoms:[...hs.symptoms],foods:[...hs.foods],exercise:[...hs.exercise]}}); entries.sort((a,b)=>b.date.localeCompare(a.date)); }
   save(); document.getElementById("h-saved-lbl").textContent="保存済み"; showToast("体調ログを保存しました");
 });
 
@@ -611,17 +618,37 @@ document.querySelectorAll(".nav-btn").forEach(btn=>btn.addEventListener("click",
 const PSK = "period_records_v1";
 let periods = [], pSymptoms = [];
 
-function loadPeriods(){
+async function loadPeriods(){
   try{ const r=localStorage.getItem(PSK); periods=r?JSON.parse(r):[]; }catch(e){ periods=[]; }
+  try{
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/entries?date=eq.__periods__&select=data`,{
+      headers:{"apikey":SUPABASE_KEY,"Authorization":`Bearer ${SUPABASE_KEY}`}
+    });
+    if(res.ok){
+      const rows=await res.json();
+      if(rows.length>0){ periods=JSON.parse(rows[0].data); localStorage.setItem(PSK,JSON.stringify(periods)); }
+    }
+  }catch(e){ console.log("Period load error:",e); }
 }
-function savePeriods(){
+async function savePeriods(){
   localStorage.setItem(PSK, JSON.stringify(periods));
+  try{
+    await fetch(`${SUPABASE_URL}/rest/v1/entries?date=eq.__periods__`, {
+      method:"DELETE",
+      headers:{"apikey":SUPABASE_KEY,"Authorization":`Bearer ${SUPABASE_KEY}`}
+    });
+    await fetch(`${SUPABASE_URL}/rest/v1/entries`, {
+      method:"POST",
+      headers:{"apikey":SUPABASE_KEY,"Authorization":`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json","Prefer":"return=minimal"},
+      body:JSON.stringify([{date:"__periods__",data:JSON.stringify(periods)}])
+    });
+  }catch(e){ console.log("Period sync error:",e); }
 }
 function daysBetween(a,b){
   return Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
 }
-function initPeriod(){
-  loadPeriods();
+async function initPeriod(){
+  await loadPeriods();
   document.getElementById("p-start").value = dk(today);
   document.getElementById("p-end").value = "";
   document.getElementById("p-memo").value = "";
@@ -670,16 +697,43 @@ function renderPeriodStats(){
 }
 function renderPeriodHistory(){
   const hist=document.getElementById("period-history");
-  if(periods.length===0){hist.innerHTML='<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px;">\u307e\u3060\u8a18\u9332\u304c\u3042\u308a\u307e\u305b\u3093</div>';return;}
+  if(periods.length===0){hist.innerHTML='<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px;">まだ記録がありません</div>';return;}
   hist.innerHTML=periods.map(p=>{
     const dur=p.end?daysBetween(p.start,p.end)+1:null;
     const sympHtml=p.symptoms&&p.symptoms.length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">'+p.symptoms.map(s=>'<span style="font-size:11px;padding:2px 7px;border-radius:20px;background:#FBEAF0;color:#72243E;border:0.5px solid #F4C0D1;">'+s+'</span>').join('')+'</div>':"";
     const memoHtml=p.memo?'<div style="font-size:12px;color:var(--text2);margin-top:4px;">'+p.memo+'</div>':"";
-    const endHtml=p.end?'<div style="font-size:12px;color:var(--text2);">\u301c '+fmtD(p.end)+'</div>':"";
-    const durHtml=dur?'<span style="font-size:12px;color:var(--text2);">'+dur+'\u65e5\u9593</span>':"";
-    return '<div style="background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:12px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:13px;font-weight:600;color:var(--text);">'+fmtD(p.start)+'</span>'+durHtml+'</div>'+endHtml+sympHtml+memoHtml+'</div>';
+    const endHtml=p.end?'<div style="font-size:12px;color:var(--text2);">〜 '+fmtD(p.end)+'</div>':"";
+    const durHtml=dur?'<span style="font-size:12px;color:var(--text2);">'+dur+'日間</span>':"";
+    const editBtn='<button onclick="editPeriod('+p.id+')" style="font-size:11px;padding:3px 8px;border-radius:6px;border:0.5px solid var(--border);background:none;cursor:pointer;color:var(--text2);font-family:inherit;">編集</button>';
+    const delBtn='<button onclick="deletePeriod('+p.id+')" style="font-size:11px;padding:3px 8px;border-radius:6px;border:0.5px solid var(--border);background:none;cursor:pointer;color:#A32D2D;font-family:inherit;">削除</button>';
+    return '<div style="background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:12px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:13px;font-weight:600;color:var(--text);">'+fmtD(p.start)+'</span><div style="display:flex;align-items:center;gap:6px;">'+durHtml+editBtn+delBtn+'</div></div>'+endHtml+sympHtml+memoHtml+'</div>';
   }).join("");
 }
+
+window.deletePeriod = function(id){
+  if(!confirm('この記録を削除しますか？')) return;
+  periods = periods.filter(p=>p.id!==id);
+  savePeriods();
+  renderPeriodStats();
+  renderPeriodHistory();
+  showToast('削除しました');
+};
+
+window.editPeriod = function(id){
+  const p = periods.find(p=>p.id===id);
+  if(!p) return;
+  document.getElementById("p-start").value = p.start;
+  document.getElementById("p-end").value = p.end||"";
+  document.getElementById("p-memo").value = p.memo||"";
+  pSymptoms = [...(p.symptoms||[])];
+  document.querySelectorAll("#p-symptom-btns .cond-btn").forEach(b=>b.classList.toggle("on",pSymptoms.includes(b.dataset.v)));
+  periods = periods.filter(x=>x.id!==id);
+  savePeriods();
+  renderPeriodStats();
+  renderPeriodHistory();
+  showToast('編集フォームに読み込みました。修正して保存してください');
+  document.getElementById("p-start").scrollIntoView({behavior:"smooth"});
+};
 
 load().then(()=>{ initWrite(dk(today)); renderCalendar(); });
 </script>
