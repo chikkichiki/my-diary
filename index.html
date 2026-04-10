@@ -38,6 +38,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Hiragino Kaku
 .s-header{padding:14px 18px 0;display:flex;align-items:center;justify-content:space-between;}
 .s-date{font-size:13px;color:var(--text2);}
 .saved-lbl{font-size:11px;color:var(--text3);}
+.saved-lbl.autosaved{color:var(--green);font-weight:500;}
 
 /* Write */
 .write-body{padding:10px 18px;display:flex;flex-direction:column;gap:9px;flex:1;}
@@ -357,6 +358,49 @@ calYear = today.getFullYear(); calMonth = today.getMonth();
 
 let hs = { score:0, symptoms:[], sleep:7, foods:[], exercise:[], memo:"" };
 
+// ========== 自動保存 ==========
+let autoSaveTimer = null;
+const AUTO_SAVE_DELAY = 3000; // 3秒後に自動保存
+
+function scheduleAutoSave() {
+  const lbl = document.getElementById("w-saved-lbl");
+  lbl.textContent = "入力中...";
+  lbl.className = "saved-lbl";
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    const text = document.getElementById("w-ta").value.trim();
+    if (text.length < 5) return;
+    doSaveEntry(text, true);
+  }, AUTO_SAVE_DELAY);
+}
+
+function doSaveEntry(text, isAuto) {
+  const tk = getWriteDate();
+  const idx = entries.findIndex(e => e.date === tk);
+  if (idx >= 0) { entries[idx].text = text; }
+  else { entries.unshift({ date: tk, text, mood: null, moodScore: null, tags: [], title: null, health: null }); }
+  entries.sort((a, b) => b.date.localeCompare(a.date));
+  save();
+  const lbl = document.getElementById("w-saved-lbl");
+  if (isAuto) {
+    lbl.textContent = "自動保存しました ✓";
+    lbl.className = "saved-lbl autosaved";
+    setTimeout(() => {
+      if (lbl.textContent === "自動保存しました ✓") {
+        lbl.textContent = "保存済み";
+        lbl.className = "saved-lbl";
+      }
+    }, 3000);
+  } else {
+    lbl.textContent = "保存済み";
+    lbl.className = "saved-lbl";
+    showToast("保存しました");
+  }
+  document.getElementById("btn-save").disabled = true;
+  setTimeout(() => { document.getElementById("btn-save").disabled = false; }, 1000);
+}
+// ==============================
+
 function dk(d){ return d.toISOString().slice(0,10); }
 function fmtD(iso){
   const d = new Date(iso+"T00:00:00");
@@ -413,11 +457,14 @@ function initWrite(targetDate){
   const ex = getEntry(tk);
   document.getElementById("w-ta").value = ex ? (ex.text||"") : "";
   document.getElementById("w-chars").textContent = ex ? (ex.text||"").length : 0;
-  document.getElementById("w-saved-lbl").textContent = ex&&ex.text ? "保存済み" : "";
+  const lbl = document.getElementById("w-saved-lbl");
+  lbl.textContent = ex&&ex.text ? "保存済み" : "";
+  lbl.className = "saved-lbl";
   document.getElementById("btn-save").disabled = !ex || (ex.text||"").length < 5;
 }
 
 document.getElementById("w-date-input").addEventListener("change", function(){
+  clearTimeout(autoSaveTimer);
   initWrite(this.value);
 });
 
@@ -425,18 +472,20 @@ document.getElementById("w-ta").addEventListener("input", function(){
   const l = this.value.length;
   document.getElementById("w-chars").textContent = l;
   document.getElementById("btn-save").disabled = l < 5;
-  document.getElementById("w-saved-lbl").textContent = "";
+  if (l >= 5) {
+    scheduleAutoSave();
+  } else {
+    clearTimeout(autoSaveTimer);
+    const lbl = document.getElementById("w-saved-lbl");
+    lbl.textContent = "";
+    lbl.className = "saved-lbl";
+  }
 });
 
 document.getElementById("btn-save").addEventListener("click", function(){
   const text = document.getElementById("w-ta").value.trim(); if(!text) return;
-  const tk = getWriteDate();
-  const idx = entries.findIndex(e=>e.date===tk);
-  if(idx>=0){ entries[idx].text=text; }
-  else{ entries.unshift({date:tk,text,mood:null,moodScore:null,tags:[],title:null,health:null}); }
-  entries.sort((a,b)=>b.date.localeCompare(a.date));
-  save(); document.getElementById("w-saved-lbl").textContent="保存済み"; showToast("保存しました");
-  this.disabled=true; setTimeout(()=>this.disabled=false,1000);
+  clearTimeout(autoSaveTimer);
+  doSaveEntry(text, false);
 });
 
 function getHealthDate(){ return document.getElementById("h-date-input").value || dk(today); }
