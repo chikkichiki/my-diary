@@ -415,12 +415,12 @@ function getEntry(iso){ return entries.find(e=>e.date===iso); }
 async function load(){
   try{ const r=localStorage.getItem(SK); entries=r?JSON.parse(r):[]; }catch(e){ entries=[]; }
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/entries?select=date,data&order=date.desc`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/entries?select=date,data&order=date.desc&limit=2000`, {
       headers:{ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
     });
     if(res.ok){
       const rows = await res.json();
-      if(rows.length > 0){
+      if(rows.length > entries.length){
         entries = rows.map(r=>JSON.parse(r.data));
         localStorage.setItem(SK, JSON.stringify(entries));
       }
@@ -429,19 +429,14 @@ async function load(){
 }
 async function save(){
   localStorage.setItem(SK, JSON.stringify(entries));
+  if(entries.length === 0) return;
   try{
-    await fetch(`${SUPABASE_URL}/rest/v1/entries?date=neq.null`, {
-      method: "DELETE",
-      headers:{ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+    const rows = entries.map(e=>({ date: e.date, data: JSON.stringify(e) }));
+    await fetch(`${SUPABASE_URL}/rest/v1/entries`, {
+      method: "POST",
+      headers:{ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(rows)
     });
-    if(entries.length > 0){
-      const rows = entries.map(e=>({ date: e.date, data: JSON.stringify(e) }));
-      await fetch(`${SUPABASE_URL}/rest/v1/entries`, {
-        method: "POST",
-        headers:{ "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
-        body: JSON.stringify(rows)
-      });
-    }
   }catch(e){ console.log("Save error:",e); }
 }
 
